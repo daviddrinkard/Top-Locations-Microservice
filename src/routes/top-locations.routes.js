@@ -3,7 +3,7 @@ const topLocationsController = require("../controllers/top-locations.controller"
 
 const router = express.Router();
 
-// GET /top-locations -> the 10 locations with the highest review scores
+// GET /api/top-locations -> top locations by average rating (highest first)
 router.get("/", topLocationsController.getTopLocations);
 
 module.exports = router;

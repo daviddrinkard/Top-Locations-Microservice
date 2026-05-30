@@ -13,7 +13,7 @@ app.get("/health", (req, res) => {
 });
 
 // Top-locations API
-app.use("/top-locations", topLocationsRoutes);
+app.use("/api/top-locations", topLocationsRoutes);
 
 // Anything else is a 404.
 app.use((req, res) => {
