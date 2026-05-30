@@ -2,8 +2,6 @@ const topLocationsService = require("../services/top-locations.service");
 
 // GET /api/top-locations?limit=N
 async function getTopLocations(req, res) {
-  // Parse the optional ?limit= override; ignore anything that isn't a
-  // positive integer and let the service fall back to its configured default.
   let limit;
   if (req.query.limit !== undefined) {
     const parsed = Number(req.query.limit);
