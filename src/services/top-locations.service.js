@@ -1,25 +1,52 @@
 const supabase = require("../config/supabase");
 
-// The Arcadia app stores reviews in public.reviews with snake_case columns
-// (review_id, location_id, user_id, rating, review_text).
-const TABLE = process.env.REVIEWS_TABLE || "reviews";
+const REVIEWS_TABLE = process.env.REVIEWS_TABLE || "reviews";
+const LOCATIONS_TABLE = process.env.LOCATIONS_TABLE || "locations";
+const DEFAULT_LIMIT = Number(process.env.TOP_LOCATIONS_DEFAULT_LIMIT) || 10;
+const MIN_REVIEWS = Number(process.env.TOP_LOCATIONS_MIN_REVIEWS) || 5;
+const PAGE_SIZE = 1000;
 
-// How many locations to return.
-const TOP_N = Number(process.env.TOP_N) || 10;
+async function fetchAllReviews() {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(REVIEWS_TABLE)
+      .select("location_id, rating")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
 
-// Pull every review, tabulate the 5-star ratings per location, and return the
-// TOP_N locations with the highest average score. Not the most efficient
-// approach (we read the whole reviews table and aggregate in memory), but it
-// keeps the service self-contained for this project.
-async function fetchTopLocations() {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("location_id, rating");
-  if (error) throw error;
+async function fetchLocationNames() {
+  const names = new Map();
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(LOCATIONS_TABLE)
+      .select("location_id, name")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const row of data) names.set(row.location_id, row.name);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return names;
+}
 
-  // Sum ratings and count reviews for each location.
+async function fetchTopLocations({ limit } = {}) {
+  const effectiveLimit =
+    Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_LIMIT;
+
+  const [reviews, names] = await Promise.all([
+    fetchAllReviews(),
+    fetchLocationNames(),
+  ]);
+
   const tallyByLocation = new Map();
-  for (const row of data || []) {
+  for (const row of reviews) {
     const tally = tallyByLocation.get(row.location_id) || {
       total: 0,
       count: 0,
@@ -28,17 +55,21 @@ async function fetchTopLocations() {
     tally.count += 1;
     tallyByLocation.set(row.location_id, tally);
   }
-
-  // Turn the tallies into average scores, then rank highest-first.
+  // filters and cleans up top locations
   const ranked = [...tallyByLocation.entries()]
     .map(([locationId, { total, count }]) => ({
       locationId,
+      name: names.get(locationId) || null,
       averageRating: total / count,
       reviewCount: count,
     }))
-    .sort((a, b) => b.averageRating - a.averageRating);
+    .filter((loc) => loc.reviewCount >= MIN_REVIEWS)
+    .sort(
+      (a, b) =>
+        b.averageRating - a.averageRating || b.reviewCount - a.reviewCount,
+    );
 
-  return ranked.slice(0, TOP_N);
+  return ranked.slice(0, effectiveLimit);
 }
 
 module.exports = {
